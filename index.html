@@ -33,6 +33,48 @@
     padding:24px 12px 60px;
   }
 
+  #inappWarning{
+    display:none;
+    width:100%;
+    max-width:1040px;
+    background:#3a1414;
+    border:1.5px solid #c22032;
+    border-radius:10px;
+    padding:14px 16px;
+    margin-bottom:16px;
+    color:#fff2d8;
+    font-size:14px;
+    line-height:1.6;
+    position:relative;
+    z-index:5;
+  }
+  #inappWarning b{ color:var(--gold-bright); }
+  #inappWarning .steps{ margin:8px 0 6px; padding-left:18px; }
+  #inappWarning .steps li{ margin-bottom:4px; }
+  #inappWarning .warn-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+  #inappWarning button{
+    font-family:'Kanit',sans-serif;
+    font-size:13px;
+    font-weight:600;
+    padding:8px 14px;
+    border-radius:8px;
+    border:1px solid var(--gold);
+    background:var(--gold);
+    color:var(--navy-deep);
+    cursor:pointer;
+  }
+  #inappWarning button:hover{ background:var(--gold-bright); }
+  #inappWarning .close-warn{
+    position:absolute;
+    top:8px; right:10px;
+    background:transparent;
+    border:none;
+    color:#fff2d8;
+    font-size:16px;
+    cursor:pointer;
+    padding:2px 6px;
+  }
+
   .toolbar{
     width:100%;
     max-width:1040px;
@@ -443,6 +485,7 @@
     *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     body{ background:#fff; padding:0; display:block; }
     .toolbar{ display:none; }
+    #inappWarning{ display:none !important; }
     #sheet{
       width:100%; max-width:100%; border-radius:0; border-width:2px;
       padding:8px 10px 12px; page-break-inside:avoid;
@@ -464,6 +507,7 @@
     .photo-slot{ font-size:6.5px; gap:1px; cursor:default; border-width:1px; }
     .photo-slot svg{ width:12px; height:12px; }
     .photo-slot .remove-btn{ display:none !important; }
+    .photo-slot{ background-size:contain !important; background-color:#0c1a3f; }
     .staff-card .photo-slot{ aspect-ratio:auto; height:24mm; }
     .players-grid .photo-slot{ aspect-ratio:auto; height:17mm; }
     .name-field{ margin-top:4px; padding:3px 3px; }
@@ -474,6 +518,19 @@
 </style>
 </head>
 <body>
+
+<div id="inappWarning">
+  <button class="close-warn" id="closeWarnBtn" title="ปิด">&#10005;</button>
+  <div><b>⚠ ตรวจพบว่าเปิดผ่านเบราว์เซอร์ในแอป</b> (เช่น LINE, Facebook) ซึ่งอาจกด "พิมพ์ / บันทึกเป็น PDF" ไม่ได้</div>
+  <div>วิธีแก้: แตะจุดสามจุด <b>(⋯)</b> มุมขวาบนของหน้าจอ แล้วเลือก</div>
+  <ol class="steps">
+    <li><b>"เปิดด้วยเบราว์เซอร์อื่น"</b> หรือ <b>"Open in Browser / Chrome / Safari"</b></li>
+    <li>หรือกดปุ่มด้านล่างเพื่อคัดลอกลิงก์ แล้วไปวางในแอป Chrome/Safari เอง</li>
+  </ol>
+  <div class="warn-actions">
+    <button id="copyLinkBtn">คัดลอกลิงก์หน้านี้</button>
+  </div>
+</div>
 
 <div class="toolbar">
   <button class="primary" id="printBtn">พิมพ์ / บันทึกเป็น PDF</button>
@@ -603,6 +660,51 @@ for (let i = 1; i <= 15; i++) {
 }
 
 document.getElementById('printBtn').addEventListener('click', () => window.print());
+
+// --- ตรวจจับ in-app browser (LINE, Facebook, Messenger, Instagram, KakaoTalk, WeChat ฯลฯ) ---
+(function () {
+  const ua = navigator.userAgent || '';
+  const inAppSignatures = [
+    'Line/', 'FBAN', 'FBAV', 'FB_IAB', 'Instagram', 'Messenger',
+    'KAKAOTALK', 'MicroMessenger', 'Twitter', 'TikTok', 'wv)'
+  ];
+  const isInApp = inAppSignatures.some(sig => ua.indexOf(sig) !== -1)
+    || (/Android/.test(ua) && /Version\/[\d.]+/.test(ua) === false && /wv/.test(ua));
+
+  const warnBox = document.getElementById('inappWarning');
+  if (isInApp && warnBox) {
+    warnBox.style.display = 'block';
+  }
+
+  const closeBtn = document.getElementById('closeWarnBtn');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => { warnBox.style.display = 'none'; });
+  }
+
+  const copyBtn = document.getElementById('copyLinkBtn');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+      const url = window.location.href;
+      const done = () => { copyBtn.textContent = 'คัดลอกแล้ว ✓'; setTimeout(() => copyBtn.textContent = 'คัดลอกลิงก์หน้านี้', 2000); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done).catch(() => fallbackCopy(url, done));
+      } else {
+        fallbackCopy(url, done);
+      }
+    });
+  }
+
+  function fallbackCopy(text, cb) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); cb(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+})();
 
 document.getElementById('resetBtn').addEventListener('click', () => {
   if (!confirm('ต้องการล้างข้อมูลทั้งหมด (รูปภาพและชื่อ) หรือไม่?')) return;
