@@ -490,12 +490,16 @@
 
   @media print{
     *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-    body{ background:#fff; padding:0; display:block; }
+    html, body{ background:#fff; padding:0; margin:0; display:block; width:194mm; }
     .toolbar{ display:none; }
     #inappWarning{ display:none !important; }
     #sheet{
-      width:100%; max-width:100%; border-radius:0; border-width:2px;
-      padding:8px 10px 12px; page-break-inside:avoid;
+      /* กำหนดความกว้างตายตัวเป็น มม. (A4 210mm - ขอบซ้ายขวา 8mm x2 ตาม @page)
+         แทนการใช้ 100% เพื่อไม่ให้ความกว้างหน้าจอของอุปกรณ์ (โดยเฉพาะมือถือ) มาบีบคอลัมน์
+         จนรูปภาพถูกบีบ/ตัดผิดสัดส่วน ไม่ว่าจะพิมพ์หรือบันทึกเป็น PDF จากอุปกรณ์ใดก็ตาม */
+      width:194mm; max-width:194mm; margin:0 auto; border-radius:0; border-width:2px;
+      padding:8px 10px 12px; page-break-inside:avoid; box-sizing:border-box;
+      transform-origin:top left;
     }
     #sheet::before{ inset:4px; }
     .header-image-wrap{ margin:-2px -2px 3px; }
@@ -671,7 +675,9 @@ for (let i = 1; i <= 15; i++) {
   playersGrid.appendChild(makeCard({ isStaff: false, index: i }));
 }
 
-document.getElementById('printBtn').addEventListener('click', () => window.print());
+// การเรียก window.print() จริง ๆ ถูกจัดการรวมกับการปรับขนาดให้พอดี 1 หน้า
+// ในบล็อกสคริปต์ "ปรับขนาดอัตโนมัติให้พอดี 1 หน้ากระดาษ" ด้านล่าง เพื่อกันการยิง
+// window.print() ซ้ำสองครั้ง
 
 // --- ตรวจจับ in-app browser (LINE, Facebook, Messenger, Instagram, KakaoTalk, WeChat ฯลฯ) ---
 (function () {
@@ -732,26 +738,63 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   const sheet = document.getElementById('sheet');
   if (!sheet) return;
 
+  // ใช้ transform:scale() แทน CSS zoom (ไม่มาตรฐาน, บางเบราว์เซอร์/บาง native
+  // print renderer โดยเฉพาะบนมือถือไม่รองรับหรือรองรับไม่สมบูรณ์ ทำให้ตอน
+  // "บันทึกเป็น PDF" เนื้อหาที่เกินความสูง 1 หน้าไม่ถูกย่อ แล้วโดนตัดที่ขอบหน้า)
+  // transform:scale ใช้ได้กว้างกว่า และเราชดเชยพื้นที่ที่หายไปจากการ scale
+  // ด้วย margin-bottom ติดลบ เพื่อไม่ให้เหลือหน้าเปล่าท้ายกระดาษ
   function fitSheetToOnePage() {
-    sheet.style.zoom = '';
-    // พื้นที่ใช้งานจริงของกระดาษ A4 แนวตั้ง หลังหักระยะขอบ 8mm บน-ล่าง (ตาม @page)
+    sheet.style.transform = '';
+    sheet.style.marginBottom = '';
+    // บังคับให้เบราว์เซอร์คำนวณ layout ใหม่ตาม CSS ของ @media print ก่อนวัดขนาดจริง
+    // (เผื่อกรณีบางเบราว์เซอร์ยังไม่ apply สไตล์ print ให้ทันจังหวะ beforeprint)
+    void sheet.offsetHeight;
+
+    // พื้นที่ใช้งานจริงของกระดาษ A4 แนวตั้ง หลังหักระยะขอบบน-ล่างของ @page (8mm x2)
     const usableHeightPx = ((297 - 16) / 25.4) * 96;
     const naturalHeight = sheet.scrollHeight;
     if (naturalHeight > usableHeightPx) {
       const scale = Math.max(0.5, usableHeightPx / naturalHeight);
-      sheet.style.zoom = scale;
+      sheet.style.transform = `scale(${scale})`;
+      // transform ไม่ลดพื้นที่ที่เนื้อหากินจริงในโฟลว์เอกสาร ต้องดึงพื้นที่ส่วนเกิน
+      // กลับมาด้วย margin-bottom ติดลบ ไม่งั้นจะเหลือที่ว่าง/หน้าที่ 2 เปล่า ๆ
+      sheet.style.marginBottom = `${-(naturalHeight - naturalHeight * scale)}px`;
     }
   }
 
   function resetSheetZoom() {
-    sheet.style.zoom = '';
+    sheet.style.transform = '';
+    sheet.style.marginBottom = '';
   }
 
   window.addEventListener('beforeprint', fitSheetToOnePage);
   window.addEventListener('afterprint', resetSheetZoom);
+
+  // เบราว์เซอร์มือถือบางตัว (เช่น การกด "พิมพ์" จากเมนูแชร์ของระบบ แทนที่จะกดปุ่มในหน้าเว็บ)
+  // อาจไม่ยิง beforeprint/afterprint ให้ครบ จึงใช้ matchMedia('print') เสริมเพื่อความชัวร์
+  if (window.matchMedia) {
+    const mq = window.matchMedia('print');
+    const handler = (e) => { e.matches ? fitSheetToOnePage() : resetSheetZoom(); };
+    if (mq.addEventListener) mq.addEventListener('change', handler);
+    else if (mq.addListener) mq.addListener(handler);
+  }
+
+  // ปุ่ม "พิมพ์ / บันทึกเป็น PDF" ในหน้าเว็บ: เรียก window.print() ตรง ๆ ซึ่งจะยิง
+  // beforeprint ให้ fitSheetToOnePage() ทำงานด้วยค่า layout ของสไตล์ @media print
+  // ที่ถูกต้องเสมอ (ห้ามเรียก fitSheetToOnePage ก่อนหน้านี้ เพราะตอนนั้นสไตล์ print
+  // ยังไม่ถูกใช้งาน จะวัดความสูงผิดจากของจริง)
+  const printBtnEl = document.getElementById('printBtn');
+  if (printBtnEl) {
+    printBtnEl.addEventListener('click', () => window.print());
+  }
 })();
 
-// --- บันทึกผังนักกีฬาเป็นไฟล์รูปภาพ (PNG) ---
+// --- บันทึกผังนักกีฬาเป็นไฟล์รูปภาพ (PNG) ให้มีสัดส่วนเท่ากระดาษ A4 เสมอ ---
+// ปัญหาเดิม: html2canvas จับภาพตามหน้าจอ "ตอนนั้น" ถ้าเปิดจากมือถือ (จอแคบ) media
+// query จะลดจำนวนคอลัมน์ของ .staff-grid/.players-grid ลง (เช่นเหลือ 2-3 คอลัมน์)
+// ทำให้ผังกลายเป็นภาพแนวยาวหลายแถว ไม่เหมือนสัดส่วนกระดาษ A4 ที่ตั้งใจไว้
+// วิธีแก้: บังคับ layout ให้เหมือน "โหมดพิมพ์บนกระดาษ A4" ก่อนจับภาพเสมอ
+// ไม่ว่าจะเปิดจากจอขนาดใดก็ตาม แล้วค่อยคืนค่ากลับหลังจับภาพเสร็จ
 document.getElementById('saveImageBtn').addEventListener('click', () => {
   const sheet = document.getElementById('sheet');
   const btn = document.getElementById('saveImageBtn');
@@ -759,24 +802,49 @@ document.getElementById('saveImageBtn').addEventListener('click', () => {
   btn.disabled = true;
   btn.textContent = 'กำลังสร้างรูปภาพ...';
 
-  html2canvas(sheet, {
-    scale: Math.max(2, window.devicePixelRatio || 1) * 1.5, // เพิ่มความละเอียดให้รูปคมชัด
-    useCORS: true,
-    backgroundColor: '#0a1638'
-  }).then((canvas) => {
-    const link = document.createElement('a');
-    const teamNameEl = document.querySelector('.field-row .value');
-    const teamName = (teamNameEl && teamNameEl.textContent.trim()) || 'ผังนักกีฬา';
-    link.download = `${teamName.replace(/[\\/:*?"<>|]/g, '')}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-  }).catch((err) => {
-    console.error(err);
-    alert('ไม่สามารถสร้างรูปภาพได้ กรุณาลองใหม่อีกครั้ง');
-  }).finally(() => {
-    btn.disabled = false;
-    btn.textContent = originalText;
-  });
+  // ความกว้างเนื้อหาจริงของกระดาษ A4 (210mm) หักขอบซ้าย-ขวา 8mm x2 ตาม @page
+  // แปลงเป็นพิกเซลที่ 96dpi เพื่อกำหนดความกว้างของ #sheet ระหว่างจับภาพ
+  const a4ContentWidthPx = Math.round(((210 - 16) / 25.4) * 96); // ≈ 733px
+
+  document.body.classList.add('exporting-image');
+  sheet.style.width = a4ContentWidthPx + 'px';
+  sheet.style.maxWidth = a4ContentWidthPx + 'px';
+
+  // รอเฟรมถัดไปให้เบราว์เซอร์ปรับ layout ตามความกว้างใหม่ก่อนค่อยจับภาพ
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    html2canvas(sheet, {
+      scale: Math.max(2, window.devicePixelRatio || 1) * 1.5, // เพิ่มความละเอียดให้รูปคมชัด
+      useCORS: true,
+      backgroundColor: '#0a1638',
+      windowWidth: a4ContentWidthPx + 60,
+      onclone: (clonedDoc) => {
+        // บังคับจำนวนคอลัมน์ให้เหมือนโหมดพิมพ์ ไม่ว่าจอต้นทางจะแคบแค่ไหน
+        const style = clonedDoc.createElement('style');
+        style.textContent = `
+          .staff-grid{ grid-template-columns:repeat(3, 1fr) !important; }
+          .players-grid{ grid-template-columns:repeat(5, 1fr) !important; }
+          .photo-slot .remove-btn{ display:none !important; }
+        `;
+        clonedDoc.head.appendChild(style);
+      }
+    }).then((canvas) => {
+      const link = document.createElement('a');
+      const teamNameEl = document.querySelector('.field-row .value');
+      const teamName = (teamNameEl && teamNameEl.textContent.trim()) || 'ผังนักกีฬา';
+      link.download = `${teamName.replace(/[\\/:*?"<>|]/g, '')}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }).catch((err) => {
+      console.error(err);
+      alert('ไม่สามารถสร้างรูปภาพได้ กรุณาลองใหม่อีกครั้ง');
+    }).finally(() => {
+      sheet.style.width = '';
+      sheet.style.maxWidth = '';
+      document.body.classList.remove('exporting-image');
+      btn.disabled = false;
+      btn.textContent = originalText;
+    });
+  }));
 });
 </script>
 
