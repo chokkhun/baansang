@@ -399,6 +399,13 @@
   .photo-slot:hover{ border-color:var(--gold-bright); color:var(--gold-bright); }
   .photo-slot.has-photo{ border-style:solid; }
   .photo-slot svg{ width:22px; height:22px; opacity:0.8; }
+  .photo-slot img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+    image-rendering:auto;
+  }
 
   .photo-slot .remove-btn{
     position:absolute;
@@ -507,9 +514,10 @@
     .photo-slot{ font-size:6.5px; gap:1px; cursor:default; border-width:1px; }
     .photo-slot svg{ width:12px; height:12px; }
     .photo-slot .remove-btn{ display:none !important; }
-    .photo-slot{ background-size:contain !important; background-color:#0c1a3f; }
-    .staff-card .photo-slot{ aspect-ratio:auto; height:24mm; }
-    .players-grid .photo-slot{ aspect-ratio:auto; height:17mm; }
+    .photo-slot{ background-color:#0c1a3f; }
+    .photo-slot img{ object-fit:cover; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .staff-card .photo-slot{ aspect-ratio:auto; height:28mm; }
+    .players-grid .photo-slot{ aspect-ratio:auto; height:22mm; }
     .name-field{ margin-top:4px; padding:3px 3px; }
     .name-field .value{ font-size:8.5px; }
     .staff-card .value{ font-size:9.5px; }
@@ -534,6 +542,7 @@
 
 <div class="toolbar">
   <button class="primary" id="printBtn">พิมพ์ / บันทึกเป็น PDF</button>
+  <button id="saveImageBtn">บันทึกเป็นรูปภาพ (PNG)</button>
   <button id="resetBtn">ล้างข้อมูลทั้งหมด</button>
 </div>
 
@@ -558,6 +567,7 @@
 
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script>
 const staffRoles = ["ผู้จัดการทีม", "โค้ช", "ผู้ช่วยโค้ช"];
 const staffGrid = document.getElementById('staffGrid');
@@ -586,9 +596,28 @@ function makeCard({ isStaff, index, tagText }) {
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
   fileInput.accept = 'image/*';
+  slot.appendChild(fileInput);
+
+  // ใช้แท็ก <img> จริงแทน background-image เพื่อให้รูปคมชัดตอนพิมพ์/ส่งออกเป็น PDF
+  function setPhoto(dataUrl) {
+    slot.classList.add('has-photo');
+    slot.innerHTML = `<img src="${dataUrl}" alt="รูปนักกีฬา"><div class="remove-btn" title="ลบรูป">&#10005;</div>`;
+    slot.appendChild(fileInput);
+  }
+
+  function clearPhoto() {
+    slot.classList.remove('has-photo');
+    slot.innerHTML = cameraIcon + '<span>เพิ่มรูปภาพ</span><div class="remove-btn" title="ลบรูป">&#10005;</div>';
+    slot.appendChild(fileInput);
+    fileInput.value = '';
+  }
+  slot._clearPhoto = clearPhoto;
 
   slot.addEventListener('click', (e) => {
-    if (e.target.closest('.remove-btn')) return;
+    if (e.target.closest('.remove-btn')) {
+      clearPhoto();
+      return;
+    }
     fileInput.click();
   });
 
@@ -596,25 +625,8 @@ function makeCard({ isStaff, index, tagText }) {
     const file = fileInput.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      slot.style.backgroundImage = `url(${ev.target.result})`;
-      slot.classList.add('has-photo');
-      slot.innerHTML = '<div class="remove-btn" title="ลบรูป">&#10005;</div>';
-      slot.style.backgroundImage = `url(${ev.target.result})`;
-    };
+    reader.onload = (ev) => setPhoto(ev.target.result);
     reader.readAsDataURL(file);
-  });
-
-  slot.appendChild(fileInput);
-
-  slot.addEventListener('click', (e) => {
-    if (e.target.closest('.remove-btn')) {
-      slot.classList.remove('has-photo');
-      slot.style.backgroundImage = 'none';
-      slot.innerHTML = cameraIcon + '<span>เพิ่มรูปภาพ</span><div class="remove-btn" title="ลบรูป">&#10005;</div>';
-      slot.appendChild(fileInput);
-      fileInput.value = '';
-    }
   });
 
   card.appendChild(slot);
@@ -711,27 +723,59 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   document.querySelectorAll('.value[contenteditable]').forEach(v => v.textContent = '');
   document.querySelectorAll('.jersey-badge').forEach(j => j.textContent = '');
   document.querySelectorAll('.photo-slot').forEach(slot => {
-    slot.classList.remove('has-photo');
-    slot.style.backgroundImage = 'none';
-    const fi = slot.querySelector('input[type=file]');
-    const newInput = document.createElement('input');
-    newInput.type = 'file';
-    newInput.accept = 'image/*';
-    slot.innerHTML = cameraIcon + '<span>เพิ่มรูปภาพ</span><div class="remove-btn" title="ลบรูป">&#10005;</div>';
-    slot.appendChild(newInput);
-    newInput.addEventListener('change', () => {
-      const file = newInput.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        slot.style.backgroundImage = `url(${ev.target.result})`;
-        slot.classList.add('has-photo');
-        slot.innerHTML = '<div class="remove-btn" title="ลบรูป">&#10005;</div>';
-        slot.style.backgroundImage = `url(${ev.target.result})`;
-        slot.appendChild(newInput);
-      };
-      reader.readAsDataURL(file);
-    });
+    if (typeof slot._clearPhoto === 'function') slot._clearPhoto();
+  });
+});
+
+// --- ปรับขนาดอัตโนมัติให้พอดี 1 หน้ากระดาษตอนพิมพ์ / บันทึกเป็น PDF ---
+(function () {
+  const sheet = document.getElementById('sheet');
+  if (!sheet) return;
+
+  function fitSheetToOnePage() {
+    sheet.style.zoom = '';
+    // พื้นที่ใช้งานจริงของกระดาษ A4 แนวตั้ง หลังหักระยะขอบ 8mm บน-ล่าง (ตาม @page)
+    const usableHeightPx = ((297 - 16) / 25.4) * 96;
+    const naturalHeight = sheet.scrollHeight;
+    if (naturalHeight > usableHeightPx) {
+      const scale = Math.max(0.5, usableHeightPx / naturalHeight);
+      sheet.style.zoom = scale;
+    }
+  }
+
+  function resetSheetZoom() {
+    sheet.style.zoom = '';
+  }
+
+  window.addEventListener('beforeprint', fitSheetToOnePage);
+  window.addEventListener('afterprint', resetSheetZoom);
+})();
+
+// --- บันทึกผังนักกีฬาเป็นไฟล์รูปภาพ (PNG) ---
+document.getElementById('saveImageBtn').addEventListener('click', () => {
+  const sheet = document.getElementById('sheet');
+  const btn = document.getElementById('saveImageBtn');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'กำลังสร้างรูปภาพ...';
+
+  html2canvas(sheet, {
+    scale: Math.max(2, window.devicePixelRatio || 1) * 1.5, // เพิ่มความละเอียดให้รูปคมชัด
+    useCORS: true,
+    backgroundColor: '#0a1638'
+  }).then((canvas) => {
+    const link = document.createElement('a');
+    const teamNameEl = document.querySelector('.field-row .value');
+    const teamName = (teamNameEl && teamNameEl.textContent.trim()) || 'ผังนักกีฬา';
+    link.download = `${teamName.replace(/[\\/:*?"<>|]/g, '')}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }).catch((err) => {
+    console.error(err);
+    alert('ไม่สามารถสร้างรูปภาพได้ กรุณาลองใหม่อีกครั้ง');
+  }).finally(() => {
+    btn.disabled = false;
+    btn.textContent = originalText;
   });
 });
 </script>
