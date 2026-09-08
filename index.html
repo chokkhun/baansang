@@ -485,6 +485,30 @@
     .name-field .value{ font-size:12.5px; }
   }
 
+  /* ใช้ตอนบันทึกเป็นรูปภาพเท่านั้น: บังคับให้เป็นเลย์เอาต์แบบเดสก์ท็อป (5 คอลัมน์เต็มแถว)
+     ไม่ว่าจะแคปเจอร์จากหน้าจอมือถือหรือจอเล็กแค่ไหนก็ตาม */
+  #sheet.force-capture{ padding:26px 30px 34px !important; border-width:3px !important; border-radius:18px !important; }
+  #sheet.force-capture::before{ inset:8px !important; border-radius:12px !important; }
+  #sheet.force-capture .field-row{ padding:10px 18px !important; gap:10px !important; flex-wrap:nowrap !important; flex-direction:row !important; align-items:baseline !important; margin-bottom:22px !important; }
+  #sheet.force-capture .field-row .label{ font-size:16px !important; }
+  #sheet.force-capture .field-row .value{ font-size:16px !important; width:auto !important; }
+  #sheet.force-capture .section-label{ font-size:15px !important; margin-bottom:12px !important; }
+  #sheet.force-capture .staff-grid{ grid-template-columns:repeat(3, 1fr) !important; gap:16px !important; margin-bottom:26px !important; }
+  #sheet.force-capture .players-grid{ grid-template-columns:repeat(5, 1fr) !important; gap:14px !important; margin-bottom:10px !important; }
+  #sheet.force-capture .card{ padding:9px !important; border-width:2px !important; border-radius:12px !important; }
+  #sheet.force-capture .num-badge{ width:26px !important; height:26px !important; font-size:13px !important; top:-10px !important; left:-10px !important; }
+  #sheet.force-capture .jersey-row{ margin-top:5px !important; }
+  #sheet.force-capture .jersey-row .jlabel{ font-size:10.5px !important; }
+  #sheet.force-capture .jersey-badge{ font-size:12.5px !important; padding:1px 6px !important; }
+  #sheet.force-capture .staff-tag{ font-size:11.5px !important; padding:3px 12px !important; top:-11px !important; }
+  #sheet.force-capture .photo-slot{ font-size:11px !important; gap:4px !important; aspect-ratio:1/1 !important; height:auto !important; }
+  #sheet.force-capture .photo-slot svg{ width:22px !important; height:22px !important; }
+  #sheet.force-capture .photo-slot .remove-btn{ width:18px !important; height:18px !important; font-size:11px !important; top:3px !important; right:3px !important; }
+  #sheet.force-capture .name-field{ margin-top:8px !important; padding:5px 6px !important; }
+  #sheet.force-capture .name-field .value{ font-size:12.5px !important; }
+  #sheet.force-capture .staff-card .value{ font-size:13.5px !important; }
+  #sheet.force-capture .staff-card{ padding:14px 10px 10px !important; }
+
 
   @page{ size:A4 portrait; margin:8mm; }
 
@@ -762,48 +786,68 @@ document.getElementById('saveImageBtn').addEventListener('click', () => {
 
   const BG_COLOR = '#0a1638';
   const A4_RATIO = 297 / 210; // สูง/กว้าง ของ A4 แนวตั้ง
+  const DESKTOP_WIDTH = 1040; // บังคับความกว้างเท่าจอเดสก์ท็อป เพื่อให้เรียงรูป 5 คอลัมน์เต็มแถวเสมอ
 
-  // แคปเจอร์ที่ขนาดเดิมของหน้าเว็บตามปกติ (ไม่ยุ่งกับ zoom/layout เพื่อเลี่ยงปัญหาความเข้ากันได้)
-  html2canvas(sheet, {
-    scale: Math.max(2, window.devicePixelRatio || 1) * 1.5, // เพิ่มความละเอียดให้รูปคมชัด
-    useCORS: true,
-    backgroundColor: BG_COLOR
-  }).then((canvas) => {
-    // ประกอบภาพที่แคปเจอร์ได้ลงบนผืนภาพสัดส่วน A4 แนวตั้ง เพื่อให้ผลลัพธ์เป็น "1 หน้ากระดาษ" เสมอ
-    const outW = canvas.width;
-    const outH = Math.round(outW * A4_RATIO);
+  // จำค่าความกว้าง/สไตล์เดิมของ sheet ไว้ก่อน แล้วบังคับเป็นเลย์เอาต์เดสก์ท็อประหว่างแคปเจอร์
+  // (ทำแบบนี้เพราะ media query อิงตามความกว้างจอจริง ไม่ใช่ความกว้างของ element)
+  const prevWidth = sheet.style.width;
+  const prevMaxWidth = sheet.style.maxWidth;
+  sheet.classList.add('force-capture');
+  sheet.style.width = DESKTOP_WIDTH + 'px';
+  sheet.style.maxWidth = DESKTOP_WIDTH + 'px';
 
-    const finalCanvas = document.createElement('canvas');
-    finalCanvas.width = outW;
-    finalCanvas.height = outH;
-    const ctx = finalCanvas.getContext('2d');
-    ctx.fillStyle = BG_COLOR;
-    ctx.fillRect(0, 0, outW, outH);
+  // บังคับ reflow แล้วรอ 1 เฟรมให้เบราว์เซอร์จัดเลย์เอาต์ใหม่ก่อนแคปเจอร์จริง
+  void sheet.offsetHeight;
 
-    if (canvas.height <= outH) {
-      // เนื้อหาพอดีหรือเตี้ยกว่าหน้า A4: จัดกึ่งกลางแนวตั้ง
-      const offsetY = Math.round((outH - canvas.height) / 2);
-      ctx.drawImage(canvas, 0, offsetY);
-    } else {
-      // เนื้อหาสูงกว่าสัดส่วน A4: ย่อทั้งภาพลงให้พอดีความสูงหน้าเดียว แล้วจัดกึ่งกลางแนวนอน
-      const scaleDown = outH / canvas.height;
-      const drawW = canvas.width * scaleDown;
-      const offsetX = Math.round((outW - drawW) / 2);
-      ctx.drawImage(canvas, offsetX, 0, drawW, outH);
-    }
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      html2canvas(sheet, {
+        scale: Math.max(2, window.devicePixelRatio || 1) * 1.5, // เพิ่มความละเอียดให้รูปคมชัด
+        useCORS: true,
+        backgroundColor: BG_COLOR,
+        windowWidth: DESKTOP_WIDTH + 40
+      }).then((canvas) => {
+        // ประกอบภาพที่แคปเจอร์ได้ลงบนผืนภาพสัดส่วน A4 แนวตั้ง เพื่อให้ผลลัพธ์เป็น "1 หน้ากระดาษ" เสมอ
+        const outW = canvas.width;
+        const outH = Math.round(outW * A4_RATIO);
 
-    const link = document.createElement('a');
-    const teamNameEl = document.querySelector('.field-row .value');
-    const teamName = (teamNameEl && teamNameEl.textContent.trim()) || 'ผังนักกีฬา';
-    link.download = `${teamName.replace(/[\\/:*?"<>|]/g, '')}.png`;
-    link.href = finalCanvas.toDataURL('image/png');
-    link.click();
-  }).catch((err) => {
-    console.error(err);
-    alert('ไม่สามารถสร้างรูปภาพได้ กรุณาลองใหม่อีกครั้ง: ' + (err && err.message ? err.message : err));
-  }).finally(() => {
-    btn.disabled = false;
-    btn.textContent = originalText;
+        const finalCanvas = document.createElement('canvas');
+        finalCanvas.width = outW;
+        finalCanvas.height = outH;
+        const ctx = finalCanvas.getContext('2d');
+        ctx.fillStyle = BG_COLOR;
+        ctx.fillRect(0, 0, outW, outH);
+
+        if (canvas.height <= outH) {
+          // เนื้อหาพอดีหรือเตี้ยกว่าหน้า A4: จัดกึ่งกลางแนวตั้ง
+          const offsetY = Math.round((outH - canvas.height) / 2);
+          ctx.drawImage(canvas, 0, offsetY);
+        } else {
+          // เนื้อหาสูงกว่าสัดส่วน A4: ย่อทั้งภาพลงให้พอดีความสูงหน้าเดียว แล้วจัดกึ่งกลางแนวนอน
+          const scaleDown = outH / canvas.height;
+          const drawW = canvas.width * scaleDown;
+          const offsetX = Math.round((outW - drawW) / 2);
+          ctx.drawImage(canvas, offsetX, 0, drawW, outH);
+        }
+
+        const link = document.createElement('a');
+        const teamNameEl = document.querySelector('.field-row .value');
+        const teamName = (teamNameEl && teamNameEl.textContent.trim()) || 'ผังนักกีฬา';
+        link.download = `${teamName.replace(/[\\/:*?"<>|]/g, '')}.png`;
+        link.href = finalCanvas.toDataURL('image/png');
+        link.click();
+      }).catch((err) => {
+        console.error(err);
+        alert('ไม่สามารถสร้างรูปภาพได้ กรุณาลองใหม่อีกครั้ง: ' + (err && err.message ? err.message : err));
+      }).finally(() => {
+        // คืนค่าสไตล์เดิมของ sheet กลับสู่โหมดปกติ (responsive ตามจอ)
+        sheet.classList.remove('force-capture');
+        sheet.style.width = prevWidth;
+        sheet.style.maxWidth = prevMaxWidth;
+        btn.disabled = false;
+        btn.textContent = originalText;
+      });
+    });
   });
 });
 
