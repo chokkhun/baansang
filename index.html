@@ -752,7 +752,7 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   window.addEventListener('afterprint', resetSheetZoom);
 })();
 
-// --- บันทึกผังนักกีฬาเป็นไฟล์รูปภาพ (PNG) ---
+// --- บันทึกผังนักกีฬาเป็นไฟล์รูปภาพ (PNG) ให้พอดี 1 หน้ากระดาษ A4 ---
 document.getElementById('saveImageBtn').addEventListener('click', () => {
   const sheet = document.getElementById('sheet');
   const btn = document.getElementById('saveImageBtn');
@@ -760,23 +760,65 @@ document.getElementById('saveImageBtn').addEventListener('click', () => {
   btn.disabled = true;
   btn.textContent = 'กำลังสร้างรูปภาพ...';
 
-  html2canvas(sheet, {
-    scale: Math.max(2, window.devicePixelRatio || 1) * 1.5, // เพิ่มความละเอียดให้รูปคมชัด
-    useCORS: true,
-    backgroundColor: '#0a1638'
-  }).then((canvas) => {
-    const link = document.createElement('a');
-    const teamNameEl = document.querySelector('.field-row .value');
-    const teamName = (teamNameEl && teamNameEl.textContent.trim()) || 'ผังนักกีฬา';
-    link.download = `${teamName.replace(/[\\/:*?"<>|]/g, '')}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-  }).catch((err) => {
-    console.error(err);
-    alert('ไม่สามารถสร้างรูปภาพได้ กรุณาลองใหม่อีกครั้ง');
-  }).finally(() => {
-    btn.disabled = false;
-    btn.textContent = originalText;
+  const BG_COLOR = '#0a1638';
+  const A4_RATIO = 297 / 210; // สูง/กว้าง ของ A4 แนวตั้ง
+
+  // ย่อเนื้อหาให้พอดีความสูงที่ใช้งานได้จริงของ A4 (เหมือนตอนพิมพ์) ก่อนแคปเจอร์
+  const originalZoom = sheet.style.zoom;
+  sheet.style.zoom = '';
+  const usableHeightPx = ((297 - 16) / 25.4) * 96; // หัก margin 8mm บน-ล่าง ตาม @page
+  const naturalHeight = sheet.scrollHeight;
+  if (naturalHeight > usableHeightPx) {
+    const scale = Math.max(0.5, usableHeightPx / naturalHeight);
+    sheet.style.zoom = scale;
+  }
+
+  // รอให้ browser reflow ตาม zoom ใหม่ก่อนแคปเจอร์จริง
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      html2canvas(sheet, {
+        scale: Math.max(2, window.devicePixelRatio || 1) * 1.5, // เพิ่มความละเอียดให้รูปคมชัด
+        useCORS: true,
+        backgroundColor: BG_COLOR
+      }).then((canvas) => {
+        // ประกอบภาพที่แคปเจอร์ได้ลงบนผืนภาพสัดส่วน A4 แนวตั้ง เพื่อให้ผลลัพธ์เป็น "1 หน้ากระดาษ" เสมอ
+        const outW = canvas.width;
+        const outH = Math.round(outW * A4_RATIO);
+
+        const finalCanvas = document.createElement('canvas');
+        finalCanvas.width = outW;
+        finalCanvas.height = outH;
+        const ctx = finalCanvas.getContext('2d');
+        ctx.fillStyle = BG_COLOR;
+        ctx.fillRect(0, 0, outW, outH);
+
+        if (canvas.height <= outH) {
+          // เนื้อหาพอดีหรือเตี้ยกว่าหน้า A4: จัดกึ่งกลางแนวตั้ง
+          const offsetY = Math.round((outH - canvas.height) / 2);
+          ctx.drawImage(canvas, 0, offsetY);
+        } else {
+          // เผื่อกรณีเนื้อหายังสูงเกิน (เช่น dpi/รูปภาพผิดปกติ) ให้ย่อทั้งภาพให้พอดีความสูงหน้า A4
+          const scaleDown = outH / canvas.height;
+          const drawW = canvas.width * scaleDown;
+          const offsetX = Math.round((outW - drawW) / 2);
+          ctx.drawImage(canvas, offsetX, 0, drawW, outH);
+        }
+
+        const link = document.createElement('a');
+        const teamNameEl = document.querySelector('.field-row .value');
+        const teamName = (teamNameEl && teamNameEl.textContent.trim()) || 'ผังนักกีฬา';
+        link.download = `${teamName.replace(/[\\/:*?"<>|]/g, '')}.png`;
+        link.href = finalCanvas.toDataURL('image/png');
+        link.click();
+      }).catch((err) => {
+        console.error(err);
+        alert('ไม่สามารถสร้างรูปภาพได้ กรุณาลองใหม่อีกครั้ง');
+      }).finally(() => {
+        sheet.style.zoom = originalZoom || '';
+        btn.disabled = false;
+        btn.textContent = originalText;
+      });
+    }, 60);
   });
 });
 
